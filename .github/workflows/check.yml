@@ -2,8 +2,11 @@ name: DVIDS B-Roll check
 
 on:
   schedule:
-    # Every 15 minutes (UTC). GitHub may delay runs under load.
-    - cron: "*/15 * * * *"
+    # Every 5 minutes (UTC). GitHub treats scheduled runs as best-effort and
+    # delays/skips them under load, so we schedule aggressively to shrink the
+    # gaps between the runs that actually fire. The watermark backfills any gap,
+    # so nothing is ever missed regardless of cadence.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     # Lets you run it on demand from the Actions tab.
     inputs:

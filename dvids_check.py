@@ -70,6 +70,27 @@ def save_state(state):
         f.write("\n")
 
 
+def clean_text(value):
+    """Neutralise markdown so untrusted DVIDS text can't render as links/markup
+    in a Teams card. Teams TextBlocks render a subset of markdown, so a hostile
+    title like '[click](http://evil)' would otherwise become a live link."""
+    if not value:
+        return ""
+    out = str(value)
+    for ch in "[]()`*_#>|":
+        out = out.replace(ch, "\\" + ch)
+    return out
+
+
+def safe_https(value):
+    """Return the URL only if it's a plain https:// link, else ''.
+    Blocks javascript:, data:, http:, etc. from reaching a card button/image."""
+    if not value:
+        return ""
+    v = str(value).strip()
+    return v if v.lower().startswith("https://") else ""
+
+
 def parse_dt(value):
     """Parse a DVIDS ISO8601 timestamp to an aware datetime, or None."""
     if not value:
@@ -98,10 +119,10 @@ def fetch_results(api_key):
 
 def build_card(item):
     """Build the Teams Adaptive Card envelope for one video."""
-    title = item.get("title") or "(untitled)"
-    desc = item.get("short_description") or ""
-    url = item.get("url") or ""
-    thumb = item.get("thumbnail") or ""
+    title = clean_text(item.get("title")) or "(untitled)"
+    desc = clean_text(item.get("short_description"))
+    url = safe_https(item.get("url"))
+    thumb = safe_https(item.get("thumbnail"))
 
     facts = []
     when = parse_dt(item.get("date_published"))
@@ -109,8 +130,8 @@ def build_card(item):
         facts.append({"title": "Published", "value": when.strftime("%d %b %Y %H:%M UTC")})
     for label, key in (("Unit", "unit_name"), ("Branch", "branch")):
         if item.get(key):
-            facts.append({"title": label, "value": str(item[key])})
-    loc = ", ".join(p for p in (item.get("city"), item.get("state"), item.get("country")) if p)
+            facts.append({"title": label, "value": clean_text(item[key])})
+    loc = ", ".join(clean_text(p) for p in (item.get("city"), item.get("state"), item.get("country")) if p)
     if loc:
         facts.append({"title": "Location", "value": loc})
     if item.get("duration"):
@@ -181,7 +202,10 @@ def main():
     if first_run:
         state = {"last_published": None, "seen_ids": []}
 
-    seen_ids = set(state.get("seen_ids") or [])
+    # Ordered list (oldest→newest) + set for O(1) lookup. Order matters so the
+    # trim below keeps the genuinely most-recent IDs, not an arbitrary subset.
+    seen_list = list(state.get("seen_ids") or [])
+    seen_ids = set(seen_list)
     last_published = parse_dt(state.get("last_published"))
 
     # Oldest first, so the channel reads chronologically.
@@ -215,15 +239,18 @@ def main():
                 log(f"ERROR posting {item.get('id')}: {e} — will retry next run.")
                 # Don't record as seen, so the next run tries again.
                 continue
-        seen_ids.add(item.get("id"))
+        iid = item.get("id")
+        if iid not in seen_ids:
+            seen_ids.add(iid)
+            seen_list.append(iid)
         pub = parse_dt(item.get("date_published"))
         if pub and (last_published is None or pub > last_published):
             last_published = pub
 
     # Persist trimmed state.
     state["last_published"] = last_published.strftime("%Y-%m-%dT%H:%M:%SZ") if last_published else None
-    # Keep the most recent IDs only.
-    state["seen_ids"] = (list(seen_ids))[-SEEN_IDS_CAP:]
+    # Keep the most recent IDs only (seen_list is oldest→newest).
+    state["seen_ids"] = seen_list[-SEEN_IDS_CAP:]
     save_state(state)
 
     log(f"Done. New: {len(new_items)}, posted: {posted}, "

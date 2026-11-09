@@ -1,8 +1,6 @@
 {
-  "last_published": "2026-11-09T16:19:01Z",
+  "last_published": "2026-11-09T16:24:12Z",
   "seen_ids": [
-    "video:1028524",
-    "video:1028536",
     "video:1028530",
     "video:1028449",
     "video:1028438",
@@ -300,6 +298,8 @@
     "video:1028783",
     "video:1029131",
     "video:1029007",
-    "video:1029214"
+    "video:1029214",
+    "video:1029188",
+    "video:1029220"
   ]
 }
